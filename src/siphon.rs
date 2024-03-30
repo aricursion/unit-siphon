@@ -1,12 +1,27 @@
 use nix::sys::stat;
 use nix::unistd::mkfifo;
 use std::fs::File;
-use std::io;
 use std::io::BufReader;
-use std::process::{Command, Stdio};
+use std::io::{self, BufRead};
+use std::process::{Child, Command, Stdio};
 use tempfile::tempdir;
 
-pub fn parse_unit(line: &str) -> Option<i64> {
+type Unit = i64;
+
+pub struct UnitPackage {
+    pub unit_iter: Box<dyn Iterator<Item = Unit>>,
+    pub proc: Child,
+}
+
+impl UnitPackage {
+    fn new(child: Child, iter: impl Iterator<Item = Unit> + 'static) -> Self {
+        UnitPackage {
+            unit_iter: Box::new(iter),
+            proc: child,
+        }
+    }
+}
+fn parse_unit(line: &str) -> Option<Unit> {
     let split: Vec<_> = line.trim().split(' ').collect();
     if split.len() != 2 {
         return None;
@@ -17,16 +32,19 @@ pub fn parse_unit(line: &str) -> Option<i64> {
     }
 }
 
-pub fn get_drat_reader(cnf_file_loc: &str) -> io::Result<BufReader<File>> {
+pub fn get_unit_iter(cnf_file_loc: &str) -> io::Result<UnitPackage> {
     let tmp_dir = tempdir()?;
     let fifo_path = tmp_dir.path().join("cadical.pipe");
     mkfifo(&fifo_path, stat::Mode::S_IRWXU)?;
 
-    Command::new("cadical")
+    let child = Command::new("cadical")
         .args(["--binary=false", cnf_file_loc, &fifo_path.to_str().unwrap()])
         .stdout(Stdio::null())
         .spawn()?;
 
     let f = File::open(fifo_path)?;
-    Ok(BufReader::new(f))
+    let buf = BufReader::new(f);
+    let lines = buf.lines();
+    let out = UnitPackage::new(child, lines.filter_map(|line| parse_unit(&line.unwrap())));
+    Ok(out)
 }

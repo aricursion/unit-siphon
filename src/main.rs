@@ -1,18 +1,12 @@
-mod siphon;
 mod cmd_line;
+mod siphon;
 
-use std::io::BufRead;
-
-use clap::Parser;
-use cmd_line::Args;
+use cmd_line::get_args;
 
 fn main() {
-    let args = Args::parse();
-    let unit_reader = siphon::get_drat_reader(&args.cnf).unwrap();
-
-    for unit in unit_reader.lines() {
-        if let Some(i) = siphon::parse_unit(&unit.unwrap()) {
-            println!("{i}");
-        }
+    let args = get_args();
+    let unit_pack = siphon::get_unit_iter(&args.cnf).unwrap();
+    for unit in unit_pack.unit_iter {
+        println!("{unit}");
     }
 }
